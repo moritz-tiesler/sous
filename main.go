@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -54,6 +55,14 @@ func NewAgent(
 					"filePath": "The relative path of a file in the working directory.",
 				},
 			},
+			{
+				Name:        "listFiles",
+				Description: "List files and directories at a given path.",
+				Function:    ListFiles,
+				Params: map[string]string{
+					"path": "Relative path to list files from.",
+				},
+			},
 		},
 	}
 }
@@ -71,6 +80,42 @@ func ReadFile(args api.ToolCallFunctionArguments) (string, error) {
 		return "", err
 	}
 	return string(content), nil
+}
+
+func ListFiles(args api.ToolCallFunctionArguments) (string, error) {
+	dir := args["path"].(string)
+
+	var files []string
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+
+		if relPath != "." {
+			if info.IsDir() {
+				files = append(files, relPath+"/")
+			} else {
+				files = append(files, relPath)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	result, err := json.Marshal(files)
+	if err != nil {
+		return "", err
+	}
+
+	return string(result), nil
 }
 
 const PREFIX = "\u001b[93mDevstral\u001b[0m: %s"
@@ -128,7 +173,6 @@ func (a *Agent) Run(ctx context.Context) error {
 		readUserInput = false
 		toolResMessage := fmt.Sprintf("%v+", toolResults)
 		conversation = append(conversation, api.Message{Role: "user", Content: toolResMessage})
-		fmt.Println(dumpConvo(conversation))
 
 	}
 	return nil
@@ -145,11 +189,12 @@ func (a *Agent) executeTool(idx int, name string, args api.ToolCallFunctionArgum
 		}
 	}
 	if !found {
-		return fmt.Sprintf("tool '%s' not found"), nil
+		return fmt.Sprintf("tool '%s' not found", name), nil
 	}
 	fmt.Printf("\u001b[92mtool\u001b[0m: %s(%s)\n", name, args)
 	response, err := toolDef.Function(args)
 	if err != nil {
+		fmt.Println(err.Error())
 		return err.Error(), err
 	}
 	return response, nil
@@ -196,7 +241,6 @@ func (a *Agent) runInference(
 		return nil
 	}
 
-	// fmt.Println(dumpRequest(*req))
 	fmt.Printf(PREFIX, "")
 	err := a.client.Chat(ctx, req, respFunc)
 	message.Content = content.String()
