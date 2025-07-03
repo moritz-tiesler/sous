@@ -70,12 +70,6 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		conversation = append(conversation, message)
 
-		// for _, content := range message.Content {
-		// 	switch content.(type) {
-		// 	case "text":
-		// 		fmt.Printf("\u001b[93mClaude\u001b[0m: %s\n", content.Text)
-		// 	}
-		// }
 	}
 	return nil
 }
@@ -97,7 +91,7 @@ func (a *Agent) runInference(ctx context.Context, conversation []api.Message, st
 				fmt.Println()
 			}
 		}
-		content.WriteString(message.Content)
+		content.WriteString(cr.Message.Content)
 		return nil
 	}
 
