@@ -9,7 +9,6 @@ import (
 	"maps"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -56,11 +55,11 @@ func NewAgent(
 				},
 			},
 			{
-				Name:        "listFiles",
-				Description: "List files and directories at a given path.",
-				Function:    ListFiles,
+				Name:        "shell",
+				Description: "use the shell to execute common linux commands for file manipulation and analysis",
+				Function:    Shell,
 				Params: map[string]string{
-					"path": "Relative path to list files from.",
+					"command": "the shell command you want to execute",
 				},
 			},
 		},
@@ -82,40 +81,14 @@ func ReadFile(args api.ToolCallFunctionArguments) (string, error) {
 	return string(content), nil
 }
 
-func ListFiles(args api.ToolCallFunctionArguments) (string, error) {
-	dir := args["path"].(string)
+func Shell(args api.ToolCallFunctionArguments) (string, error) {
+	cmdString := args["command"].(string)
 
-	var files []string
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
-		}
-
-		if relPath != "." {
-			if info.IsDir() {
-				files = append(files, relPath+"/")
-			} else {
-				files = append(files, relPath)
-			}
-		}
-		return nil
-	})
-
-	if err != nil {
-		return "", err
-	}
-
-	result, err := json.Marshal(files)
-	if err != nil {
-		return "", err
-	}
-
-	return string(result), nil
+	cmd := exec.Command("bash", "-c", cmdString)
+	fmt.Println(cmd.Args)
+	res, err := cmd.CombinedOutput()
+	fmt.Printf("cmd result: %s\n, cmd error: %v", string(res), err)
+	return string(res), err
 }
 
 const PREFIX = "\u001b[93mDevstral\u001b[0m: %s"
@@ -171,8 +144,9 @@ func (a *Agent) Run(ctx context.Context) error {
 		}()
 
 		readUserInput = false
-		toolResMessage := fmt.Sprintf("%v+", toolResults)
-		conversation = append(conversation, api.Message{Role: "user", Content: toolResMessage})
+		toolResMessage := fmt.Sprintf("%v", toolResults)
+		conversation = append(conversation, api.Message{Role: "tool", Content: toolResMessage})
+		fmt.Println(dumpConvo(conversation))
 
 	}
 	return nil
