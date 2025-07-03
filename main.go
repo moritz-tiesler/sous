@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -67,6 +69,7 @@ func (a *Agent) Run(ctx context.Context) error {
 
 		message, err := a.runInference(ctx, conversation, stream)
 		if err != nil {
+			fmt.Println(dumpConvo(conversation))
 			return err
 		}
 
@@ -90,7 +93,9 @@ func (a *Agent) runInference(ctx context.Context, conversation []api.Message, st
 		Stream:   &stream,
 	}
 	content := strings.Builder{}
-	message := api.Message{}
+	message := api.Message{
+		Role: "assistant",
+	}
 	respFunc := func(cr api.ChatResponse) error {
 		if stream {
 			if !cr.Done {
@@ -107,6 +112,19 @@ func (a *Agent) runInference(ctx context.Context, conversation []api.Message, st
 	err := a.client.Chat(ctx, req, respFunc)
 	message.Content = content.String()
 	return message, err
+}
+
+func dumpConvo(convo []api.Message) string {
+	sb := bytes.Buffer{}
+
+	for _, m := range convo {
+		b, err := json.MarshalIndent(m, "", "    ")
+		if err != nil {
+			panic(fmt.Sprintf("error unmarshaling %v", m))
+		}
+		sb.Write(b)
+	}
+	return sb.String()
 }
 
 func ping() error {
