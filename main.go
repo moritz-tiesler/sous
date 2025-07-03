@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/ollama/ollama/api"
 )
@@ -43,6 +44,8 @@ type Agent struct {
 	getUserMessage func() (string, bool)
 }
 
+const PREFIX = "\u001b[93mDevstral\u001b[0m: %s"
+
 func (a *Agent) Run(ctx context.Context) error {
 	conversation := []api.Message{}
 	fmt.Println("Chat with Devstral (use 'ctrl-c' to quit)")
@@ -60,7 +63,8 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		conversation = append(conversation, userMessage)
 
-		message, err := a.runInference(ctx, conversation)
+		stream := true
+		message, err := a.runInference(ctx, conversation, stream)
 		if err != nil {
 			return err
 		}
@@ -72,24 +76,33 @@ func (a *Agent) Run(ctx context.Context) error {
 		// 		fmt.Printf("\u001b[93mClaude\u001b[0m: %s\n", content.Text)
 		// 	}
 		// }
-
-		fmt.Printf("\u001b[93mDevstral\u001b[0m: %s\n", message.Content)
 	}
 	return nil
 }
 
-func (a *Agent) runInference(ctx context.Context, conversation []api.Message) (api.Message, error) {
+func (a *Agent) runInference(ctx context.Context, conversation []api.Message, stream bool) (api.Message, error) {
 	req := &api.ChatRequest{
 		// Model:  "gemma2",
 		Model:    "devstral:24b-small-2505-q8_0",
 		Messages: conversation,
-		Stream:   new(bool),
+		Stream:   &stream,
 	}
-	var message api.Message
+	content := strings.Builder{}
+	message := api.Message{}
 	respFunc := func(cr api.ChatResponse) error {
-		message = cr.Message
+		if stream {
+			if !cr.Done {
+				fmt.Printf("%s", cr.Message.Content)
+			} else {
+				fmt.Println()
+			}
+		}
+		content.WriteString(message.Content)
 		return nil
 	}
+
+	fmt.Printf(PREFIX, "")
 	err := a.client.Chat(ctx, req, respFunc)
+	message.Content = content.String()
 	return message, err
 }
