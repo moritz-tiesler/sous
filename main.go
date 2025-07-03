@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/ollama/ollama/api"
@@ -50,6 +51,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	conversation := []api.Message{}
 	fmt.Println("Chat with Devstral (use 'ctrl-c' to quit)")
 
+	stream := true
 	for {
 		fmt.Print("\u001b[94mYou\u001b[0m: ")
 		userInput, ok := a.getUserMessage()
@@ -63,11 +65,17 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		conversation = append(conversation, userMessage)
 
-		stream := true
 		message, err := a.runInference(ctx, conversation, stream)
 		if err != nil {
 			return err
 		}
+
+		go func() {
+			if err = ping(); err != nil {
+				panic(err.Error())
+			}
+		}()
+
 		conversation = append(conversation, message)
 
 	}
@@ -99,4 +107,10 @@ func (a *Agent) runInference(ctx context.Context, conversation []api.Message, st
 	err := a.client.Chat(ctx, req, respFunc)
 	message.Content = content.String()
 	return message, err
+}
+
+func ping() error {
+	cmd := exec.Command("mpv", "/home/moritz/new-notification-09-352705.mp3")
+	err := cmd.Run()
+	return err
 }
