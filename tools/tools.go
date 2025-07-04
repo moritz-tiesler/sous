@@ -27,6 +27,17 @@ func Shell(args api.ToolCallFunctionArguments) (string, error) {
 	return string(res), err
 }
 
+func EditFile(args api.ToolCallFunctionArguments) (string, error) {
+	path := args["filePath"].(string)
+	content := args["content"].(string)
+
+	err := os.WriteFile(path, []byte(content), 0644)
+	if err != nil {
+		return "", err
+	}
+	return "File edited successfully", nil
+}
+
 func ToolMap() map[string]func(api.ToolCallFunctionArguments) (string, error) {
 	return map[string]func(api.ToolCallFunctionArguments) (string, error){
 		"readFile": ReadFile,
@@ -93,17 +104,6 @@ func Tools() api.Tools {
 			},
 		},
 	}
-}
-
-func EditFile(args api.ToolCallFunctionArguments) (string, error) {
-	path := args["filePath"].(string)
-	content := args["content"].(string)
-
-	err := os.WriteFile(path, []byte(content), 0644)
-	if err != nil {
-		return "", err
-	}
-	return "File edited successfully", nil
 }
 
 type ToolFunctionParameters struct {
