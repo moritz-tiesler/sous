@@ -138,7 +138,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			var res string
 			res += result
 			if err != nil {
-				res += fmt.Sprintf("error: %s", err.Error())
+				res += fmt.Sprintf("error: %s\n", err.Error())
 			}
 			toolResults[f.Name] = res
 		}
@@ -178,8 +178,8 @@ func (a *Agent) executeTool(idx int, name string, args api.ToolCallFunctionArgum
 	PrintAction("tool: %s, %v\n", name, args)
 	response, err := toolFunc(args)
 	if err != nil {
-		PrintAction("errors %v\n", err.Error())
-		return err.Error(), err
+		PrintAction("errors %s %v\n", response, err.Error())
+		return response, err
 	}
 	return response, nil
 }
