@@ -236,11 +236,9 @@ func (a *Agent) runInference(
 		}
 		if stream {
 			if strings.TrimSpace(cr.Message.Content) == "<think>" {
-				fmt.Println("think detected")
 				thinkingOutput = true
 			}
 			if strings.TrimSpace(cr.Message.Content) == "</think>" {
-				fmt.Println("think end detected")
 				thinkingOutput = false
 			}
 			if !cr.Done {
