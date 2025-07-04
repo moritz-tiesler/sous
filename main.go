@@ -134,14 +134,13 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		if len(toolResults) == 0 {
 			readUserInput = true
+			go func() {
+				if err = ping(); err != nil {
+					panic(err.Error())
+				}
+			}()
 			continue
 		}
-
-		go func() {
-			if err = ping(); err != nil {
-				panic(err.Error())
-			}
-		}()
 
 		readUserInput = false
 		toolResMessage := fmt.Sprintf("%v", toolResults)
