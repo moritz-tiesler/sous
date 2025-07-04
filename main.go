@@ -4,17 +4,37 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/moritz-tiesler/sous/tools"
 	"github.com/ollama/ollama/api"
 )
 
 func main() {
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGQUIT)
+
+	interruptChat := make(chan struct{}, 1)
+	go func() {
+		select {
+		case sig := <-signalChan:
+			switch sig {
+			case syscall.SIGINT:
+				fmt.Println("\nInterrupted by Ctrl+C. Canceling stream...")
+				interruptChat <- struct{}{}
+			case syscall.SIGQUIT:
+				fmt.Println("\nClosing app with Ctrl+D...")
+				os.Exit(0)
+			}
+		}
+	}()
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
 		log.Fatal(err)
@@ -28,7 +48,7 @@ func main() {
 		return scanner.Text(), true
 	}
 
-	agent := NewAgent(client, getUserMessage)
+	agent := NewAgent(client, getUserMessage, interruptChat)
 	err = agent.Run(context.TODO())
 	if err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
@@ -38,6 +58,7 @@ func main() {
 func NewAgent(
 	client *api.Client,
 	getUserMessage func() (string, bool),
+	interrupt <-chan struct{},
 ) *Agent {
 	return &Agent{
 		client:         client,
@@ -52,6 +73,7 @@ type Agent struct {
 	getUserMessage func() (string, bool)
 	toolDefs       api.Tools
 	toolMap        map[string]func(api.ToolCallFunctionArguments) (string, error)
+	interrupt      <-chan struct{}
 }
 
 func ReadFile(args api.ToolCallFunctionArguments) (string, error) {
@@ -77,7 +99,7 @@ const PREFIX = "\u001b[93mDevstral\u001b[0m: %s"
 
 func (a *Agent) Run(ctx context.Context) error {
 	conversation := []api.Message{}
-	fmt.Println("Chat with Devstral (use 'ctrl-c' to quit)")
+	fmt.Println("Chat with Devstral (use 'Ctrl+D' to quit)")
 
 	stream := true
 	readUserInput := true
@@ -180,6 +202,11 @@ func (a *Agent) runInference(
 	}
 	thinkingOutput := false
 	respFunc := func(cr api.ChatResponse) error {
+		select {
+		case <-a.interrupt:
+			return errors.New("chat interrupt")
+		default:
+		}
 		if stream {
 			if strings.TrimSpace(cr.Message.Content) == "<think>" {
 				fmt.Println("think detected")
