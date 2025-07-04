@@ -25,7 +25,7 @@ func Shell(args api.ToolCallFunctionArguments) (string, error) {
 	return string(res), err
 }
 
-func EditFile(args api.ToolCallFunctionArguments) (string, error) {
+func WriteFile(args api.ToolCallFunctionArguments) (string, error) {
 	path := args["filePath"].(string)
 	content := args["content"].(string)
 
@@ -78,21 +78,30 @@ func CreateFile(args api.ToolCallFunctionArguments) (string, error) {
 
 func ToolMap() map[string]func(api.ToolCallFunctionArguments) (string, error) {
 	return map[string]func(api.ToolCallFunctionArguments) (string, error){
-		"readFile":   ReadFile,
-		"shell":      Shell,
-		"editFile":   EditFile,
-		"searchFile": SearchFile,
-		"listFiles":  ListFiles,
-		"createFile": CreateFile,
+		READ_FILE:   ReadFile,
+		SHELL:       Shell,
+		WRITE_FILE:  WriteFile,
+		SEARCH_FILE: SearchFile,
+		LIST_FILES:  ListFiles,
+		CREATE_FILE: CreateFile,
 	}
 }
+
+const (
+	READ_FILE   = "readFile"
+	SHELL       = "shell"
+	WRITE_FILE  = "writeFile"
+	SEARCH_FILE = "searchFile"
+	LIST_FILES  = "listFiles"
+	CREATE_FILE = "createFile"
+)
 
 func Tools() api.Tools {
 	return api.Tools{
 		api.Tool{
 			Type: "function",
 			Function: api.ToolFunction{
-				Name:        "readFile",
+				Name:        READ_FILE,
 				Description: "Read the contents of a given relative file path. Use this when you want to see what's inside a file. Do not use this with directory names.",
 				Parameters: ToolFunctionParameters{
 					Type:     "object",
@@ -109,7 +118,7 @@ func Tools() api.Tools {
 		api.Tool{
 			Type: "function",
 			Function: api.ToolFunction{
-				Name:        "shell",
+				Name:        SHELL,
 				Description: "use the shell to execute common linux commands for file manipulation and analysis",
 				Parameters: ToolFunctionParameters{
 					Type:     "object",
@@ -126,8 +135,8 @@ func Tools() api.Tools {
 		api.Tool{
 			Type: "function",
 			Function: api.ToolFunction{
-				Name:        "editFile",
-				Description: "Edit the contents of a file at a given path. Provides full control over file content.",
+				Name:        WRITE_FILE,
+				Description: "write the contents to a file at a given path. Provides full control over file content.",
 				Parameters: ToolFunctionParameters{
 					Type:     "object",
 					Required: []string{"filePath", "content"},
@@ -138,7 +147,7 @@ func Tools() api.Tools {
 						},
 						"content": {
 							Type:        api.PropertyType{"string"},
-							Description: "The new content to write to the file.",
+							Description: "The content to write to the file.",
 						},
 					},
 				}.ToAPI(),
@@ -147,7 +156,7 @@ func Tools() api.Tools {
 		api.Tool{
 			Type: "function",
 			Function: api.ToolFunction{
-				Name:        "searchFile",
+				Name:        SEARCH_FILE,
 				Description: "Search for a string in a file and return matching lines.",
 				Parameters: ToolFunctionParameters{
 					Type:     "object",
@@ -168,7 +177,7 @@ func Tools() api.Tools {
 		api.Tool{
 			Type: "function",
 			Function: api.ToolFunction{
-				Name:        "listFiles",
+				Name:        LIST_FILES,
 				Description: "List all files in a directory (or subdirectories, if needed).",
 				Parameters: ToolFunctionParameters{
 					Type:     "object",
@@ -185,7 +194,7 @@ func Tools() api.Tools {
 		api.Tool{
 			Type: "function",
 			Function: api.ToolFunction{
-				Name:        "createFile",
+				Name:        CREATE_FILE,
 				Description: "Create a new file with given content",
 				Parameters: ToolFunctionParameters{
 					Type:     "object",
