@@ -110,6 +110,17 @@ func (a *Agent) Run(ctx context.Context) error {
 	stream := true
 	readUserInput := true
 	for {
+		if len(conversation) > 10 {
+			PrintAction("%s...\n", "SUMMARIZING")
+			summary, err := a.summarizeConvo(ctx, conversation)
+			if err != nil {
+				return nil
+			}
+
+			conversation = append([]api.Message{}, summary)
+			PrintAction("NEW CONVO LEN=%d...\n", len(conversation))
+			PrintAction("NEW CONVO STarts with=%s...\n", summary.Content)
+		}
 		if readUserInput {
 			fmt.Print("\u001b[94mYou\u001b[0m: ")
 			userInput, ok := a.getUserMessage()
@@ -144,7 +155,6 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		if len(toolResults) == 0 {
 			readUserInput = true
-			// fmt.Println(dumpConvo(conversation))
 			go func() {
 				if err = ping(); err != nil {
 					panic(err.Error())
@@ -156,10 +166,58 @@ func (a *Agent) Run(ctx context.Context) error {
 		readUserInput = false
 		toolResMessage := fmt.Sprintf("%v", toolResults)
 		conversation = append(conversation, api.Message{Role: "tool", Content: toolResMessage})
-		// fmt.Println(dumpConvo(conversation))
 
 	}
 	return nil
+}
+
+func (a *Agent) summarizeConvo(ctx context.Context, conversation []api.Message) (api.Message, error) {
+
+	reqCtx, reqCancel := context.WithCancel(ctx)
+	a.SetActiveChatContext(reqCtx, reqCancel)
+	conversation = append(conversation, api.Message{
+		Role:    "user",
+		Content: "please summarize the active conversation, so that you can pick up your work form here",
+	})
+	stream := true
+	think := false
+	req := &api.ChatRequest{
+		// Model:  "gemma2",
+		// Model:    "devstral:24b-small-2505-q8_0",
+		// Model:    "llama3.2:latest",
+		// Model:    "qwen2.5-coder:32b",
+		// Model:    "qwen3:32b",
+		// Model:    "qwen3:14b",
+		Model:    "qwen3:14b_devstral",
+		Messages: conversation,
+		Stream:   &stream,
+		Tools:    a.toolDefs,
+		Think:    &think,
+	}
+	content := strings.Builder{}
+	message := api.Message{
+		Role: "assistant",
+	}
+	respFunc := func(cr api.ChatResponse) error {
+		select {
+		case <-reqCtx.Done():
+			return fmt.Errorf("chat cancelled")
+		default:
+		}
+
+		if !cr.Done {
+			PrintAction("%s", cr.Message.Content)
+		} else {
+			fmt.Println()
+		}
+		content.WriteString(cr.Message.Content)
+		return nil
+	}
+
+	err := a.client.Chat(reqCtx, req, respFunc)
+	message.Content = content.String()
+	a.SetActiveChatContext(context.TODO(), nil)
+	return message, err
 }
 
 func (a *Agent) executeTool(idx int, name string, args api.ToolCallFunctionArguments) (string, error) {
