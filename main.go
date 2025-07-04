@@ -189,7 +189,11 @@ func (a *Agent) runInference(
 
 	req := &api.ChatRequest{
 		// Model:  "gemma2",
-		Model:    "devstral:24b-small-2505-q8_0",
+		// Model:    "devstral:24b-small-2505-q8_0",
+		// Model:    "llama3.2:latest",
+		// Model:    "qwen2.5-coder:32b",
+		// Model:    "qwen3:32b",
+		Model:    "qwen3:14b",
 		Messages: conversation,
 		Stream:   &stream,
 		Tools:    reqTools,
