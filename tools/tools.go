@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/ollama/ollama/api"
 )
@@ -38,11 +39,54 @@ func EditFile(args api.ToolCallFunctionArguments) (string, error) {
 	return "File edited successfully", nil
 }
 
+func SearchFile(args api.ToolCallFunctionArguments) (string, error) {
+	path := args["filePath"].(string)
+	query := args["query"].(string)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Split(string(content), "\n")
+	var matches []string
+	for _, line := range lines {
+		if strings.Contains(line, query) {
+			matches = append(matches, line)
+		}
+	}
+	return strings.Join(matches, "\n"), nil
+}
+
+func ListFiles(args api.ToolCallFunctionArguments) (string, error) {
+	dirPath := args["dirPath"].(string)
+	files, err := os.ReadDir(dirPath)
+	if err != nil {
+		return "", err
+	}
+	var result []string
+	for _, file := range files {
+		result = append(result, file.Name())
+	}
+	return strings.Join(result, "\n"), nil
+}
+
+func CreateFile(args api.ToolCallFunctionArguments) (string, error) {
+	path := args["filePath"].(string)
+	content := args["content"].(string)
+	err := os.WriteFile(path, []byte(content), 0644)
+	if err != nil {
+		return "", err
+	}
+	return "File created successfully", nil
+}
+
 func ToolMap() map[string]func(api.ToolCallFunctionArguments) (string, error) {
 	return map[string]func(api.ToolCallFunctionArguments) (string, error){
-		"readFile": ReadFile,
-		"shell":    Shell,
-		"editFile": EditFile,
+		"readFile":   ReadFile,
+		"shell":      Shell,
+		"editFile":   EditFile,
+		"searchFile": SearchFile,
+		"listFiles":  ListFiles,
+		"createFile": CreateFile,
 	}
 }
 
@@ -98,6 +142,65 @@ func Tools() api.Tools {
 						"content": {
 							Type:        api.PropertyType{"string"},
 							Description: "The new content to write to the file.",
+						},
+					},
+				}.ToAPI(),
+			},
+		},
+		api.Tool{
+			Type: "function",
+			Function: api.ToolFunction{
+				Name:        "searchFile",
+				Description: "Search for a string in a file and return matching lines.",
+				Parameters: ToolFunctionParameters{
+					Type:     "object",
+					Required: []string{"filePath", "query"},
+					Properties: ToolFunctionProperties{
+						"filePath": {
+							Type:        api.PropertyType{"string"},
+							Description: "The relative path of the file in the working directory.",
+						},
+						"query": {
+							Type:        api.PropertyType{"string"},
+							Description: "the string to look for",
+						},
+					},
+				}.ToAPI(),
+			},
+		},
+		api.Tool{
+			Type: "function",
+			Function: api.ToolFunction{
+				Name:        "listFiles",
+				Description: "List all files in a directory (or subdirectories, if needed).",
+				Parameters: ToolFunctionParameters{
+					Type:     "object",
+					Required: []string{"dirPath"},
+					Properties: ToolFunctionProperties{
+						"dirPath": {
+							Type:        api.PropertyType{"string"},
+							Description: "the path of the dir to list",
+						},
+					},
+				}.ToAPI(),
+			},
+		},
+		api.Tool{
+			Type: "function",
+			Function: api.ToolFunction{
+				Name:        "createFile",
+				Description: "Create a new file with given content",
+				Parameters: ToolFunctionParameters{
+					Type:     "object",
+					Required: []string{"filePath", "content"},
+					Properties: ToolFunctionProperties{
+						"filePath": {
+							Type:        api.PropertyType{"string"},
+							Description: "the path of the new file",
+						},
+						"content": {
+							Type:        api.PropertyType{"string"},
+							Description: "the content of the new file",
 						},
 					},
 				}.ToAPI(),
