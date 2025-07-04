@@ -4,13 +4,13 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/moritz-tiesler/sous/tools"
@@ -18,23 +18,6 @@ import (
 )
 
 func main() {
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGQUIT)
-
-	interruptChat := make(chan struct{}, 1)
-	go func() {
-		select {
-		case sig := <-signalChan:
-			switch sig {
-			case syscall.SIGINT:
-				fmt.Println("\nInterrupted by Ctrl+C. Canceling stream...")
-				interruptChat <- struct{}{}
-			case syscall.SIGQUIT:
-				fmt.Println("\nClosing app with Ctrl+D...")
-				os.Exit(0)
-			}
-		}
-	}()
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
 		log.Fatal(err)
@@ -48,24 +31,58 @@ func main() {
 		return scanner.Text(), true
 	}
 
-	agent := NewAgent(client, getUserMessage, interruptChat)
-	err = agent.Run(context.TODO())
-	if err != nil {
-		fmt.Printf("Error: %s\n", err.Error())
-	}
+	agent := NewAgent(client, getUserMessage)
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	appCtx, appCancel := context.WithCancel(context.Background())
+	go func() {
+		for {
+			select {
+			case <-sigCh:
+				if agent.chatContext.cancel != nil {
+					agent.chatContext.cancel()
+					fmt.Println()
+					agent.SetActiveChatContext(context.TODO(), nil)
+				} else {
+					appCancel()
+				}
+			case <-appCtx.Done():
+				// Context was already cancelled from another source (e.g., main exited)
+				return
+			}
+		}
+	}()
+
+	go func() {
+		err = agent.Run(appCtx)
+		if err != nil {
+			fmt.Printf("Error: %s\n", err.Error())
+		}
+	}()
+
+	<-appCtx.Done()
+	fmt.Println("Bye")
+	os.Exit(1)
 }
 
 func NewAgent(
 	client *api.Client,
 	getUserMessage func() (string, bool),
-	interrupt <-chan struct{},
 ) *Agent {
 	return &Agent{
 		client:         client,
 		getUserMessage: getUserMessage,
 		toolDefs:       tools.Tools(),
 		toolMap:        tools.ToolMap(),
+		chatContext:    &ChatContext{context.Background(), nil},
 	}
+}
+
+type ChatContext struct {
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 type Agent struct {
@@ -73,7 +90,15 @@ type Agent struct {
 	getUserMessage func() (string, bool)
 	toolDefs       api.Tools
 	toolMap        map[string]func(api.ToolCallFunctionArguments) (string, error)
-	interrupt      <-chan struct{}
+
+	mu          sync.Mutex
+	chatContext *ChatContext
+}
+
+func (a *Agent) SetActiveChatContext(ctx context.Context, cancel context.CancelFunc) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.chatContext = &ChatContext{ctx: ctx, cancel: cancel}
 }
 
 func ReadFile(args api.ToolCallFunctionArguments) (string, error) {
@@ -91,15 +116,15 @@ func Shell(args api.ToolCallFunctionArguments) (string, error) {
 	cmd := exec.Command("bash", "-c", cmdString)
 	fmt.Println(cmd.Args)
 	res, err := cmd.CombinedOutput()
-	fmt.Printf("cmd result: %s\n, cmd error: %v", string(res), err)
+	fmt.Printf("cmd result: %s\n, cmd error: %v\n", string(res), err)
 	return string(res), err
 }
 
-const PREFIX = "\u001b[93mDevstral\u001b[0m: %s"
+const PREFIX = "\u001b[93mSous\u001b[0m: %s"
 
 func (a *Agent) Run(ctx context.Context) error {
 	conversation := []api.Message{}
-	fmt.Println("Chat with Devstral (use 'Ctrl+D' to quit)")
+	fmt.Println("Chat with Sous")
 
 	stream := true
 	readUserInput := true
@@ -184,6 +209,8 @@ func (a *Agent) runInference(
 	stream bool,
 ) (api.Message, error) {
 
+	reqCtx, reqCancel := context.WithCancel(ctx)
+	a.SetActiveChatContext(reqCtx, reqCancel)
 	req := &api.ChatRequest{
 		// Model:  "gemma2",
 		// Model:    "devstral:24b-small-2505-q8_0",
@@ -203,8 +230,8 @@ func (a *Agent) runInference(
 	thinkingOutput := false
 	respFunc := func(cr api.ChatResponse) error {
 		select {
-		case <-a.interrupt:
-			return errors.New("chat interrupt")
+		case <-reqCtx.Done():
+			return fmt.Errorf("chat cancelled")
 		default:
 		}
 		if stream {
@@ -232,8 +259,9 @@ func (a *Agent) runInference(
 	}
 
 	fmt.Printf(PREFIX, "")
-	err := a.client.Chat(ctx, req, respFunc)
+	err := a.client.Chat(reqCtx, req, respFunc)
 	message.Content = content.String()
+	a.SetActiveChatContext(context.TODO(), nil)
 	return message, err
 }
 
