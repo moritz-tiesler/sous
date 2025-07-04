@@ -101,25 +101,6 @@ func (a *Agent) SetActiveChatContext(ctx context.Context, cancel context.CancelF
 	a.chatContext = &ChatContext{ctx: ctx, cancel: cancel}
 }
 
-func ReadFile(args api.ToolCallFunctionArguments) (string, error) {
-	path := args["filePath"].(string)
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return string(content), nil
-}
-
-func Shell(args api.ToolCallFunctionArguments) (string, error) {
-	cmdString := args["command"].(string)
-
-	cmd := exec.Command("bash", "-c", cmdString)
-	fmt.Println(cmd.Args)
-	res, err := cmd.CombinedOutput()
-	fmt.Printf("cmd result: %s\n, cmd error: %v\n", string(res), err)
-	return string(res), err
-}
-
 const PREFIX = "\u001b[93mSous\u001b[0m: %s"
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -194,10 +175,10 @@ func (a *Agent) executeTool(idx int, name string, args api.ToolCallFunctionArgum
 	if !found {
 		return fmt.Sprintf("tool '%s' not found", name), nil
 	}
-	fmt.Printf("\u001b[92mtool\u001b[0m: %s(%s)\n", name, args)
+	PrintAction("tool: %s, %v\n", name, args)
 	response, err := toolFunc(args)
 	if err != nil {
-		fmt.Println(err.Error())
+		PrintAction("errors %v\n", err.Error())
 		return err.Error(), err
 	}
 	return response, nil
@@ -234,24 +215,29 @@ func (a *Agent) runInference(
 			return fmt.Errorf("chat cancelled")
 		default:
 		}
-		if stream {
-			if strings.TrimSpace(cr.Message.Content) == "<think>" {
-				thinkingOutput = true
-			}
-			if strings.TrimSpace(cr.Message.Content) == "</think>" {
-				thinkingOutput = false
-			}
-			if !cr.Done {
-				fmt.Printf("%s", cr.Message.Content)
-			} else {
-				fmt.Println()
-			}
+
+		if strings.TrimSpace(cr.Message.Content) == "<think>" {
+			thinkingOutput = true
+		}
+		var printFunc func(format string, a ...interface{})
+		if thinkingOutput {
+			printFunc = PrintThink
+		} else {
+			printFunc = PrintNonThink
+		}
+		if !cr.Done {
+			printFunc("%s", cr.Message.Content)
+		} else {
+			fmt.Println()
 		}
 		if len(cr.Message.ToolCalls) > 0 {
 			message.ToolCalls = append(message.ToolCalls, cr.Message.ToolCalls...)
 		}
 		if !thinkingOutput {
 			content.WriteString(cr.Message.Content)
+		}
+		if strings.TrimSpace(cr.Message.Content) == "</think>" {
+			thinkingOutput = false
 		}
 		return nil
 	}

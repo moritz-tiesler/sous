@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -22,9 +21,7 @@ func Shell(args api.ToolCallFunctionArguments) (string, error) {
 	cmdString := args["command"].(string)
 
 	cmd := exec.Command("bash", "-c", cmdString)
-	fmt.Println(cmd.Args)
 	res, err := cmd.CombinedOutput()
-	fmt.Printf("cmd result: %s\n, cmd error: %v\n", string(res), err)
 	return string(res), err
 }
 
