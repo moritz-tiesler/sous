@@ -31,6 +31,7 @@ func ToolMap() map[string]func(api.ToolCallFunctionArguments) (string, error) {
 	return map[string]func(api.ToolCallFunctionArguments) (string, error){
 		"readFile": ReadFile,
 		"shell":    Shell,
+		"editFile": EditFile,
 	}
 }
 
@@ -70,7 +71,39 @@ func Tools() api.Tools {
 				}.ToAPI(),
 			},
 		},
+		api.Tool{
+			Type: "function",
+			Function: api.ToolFunction{
+				Name:        "editFile",
+				Description: "Edit the contents of a file at a given path. Provides full control over file content.",
+				Parameters: ToolFunctionParameters{
+					Type:     "object",
+					Required: []string{"filePath", "content"},
+					Properties: ToolFunctionProperties{
+						"filePath": {
+							Type:        api.PropertyType{"string"},
+							Description: "The relative path of the file in the working directory.",
+						},
+						"content": {
+							Type:        api.PropertyType{"string"},
+							Description: "The new content to write to the file.",
+						},
+					},
+				}.ToAPI(),
+			},
+		},
 	}
+}
+
+func EditFile(args api.ToolCallFunctionArguments) (string, error) {
+	path := args["filePath"].(string)
+	content := args["content"].(string)
+
+	err := os.WriteFile(path, []byte(content), 0644)
+	if err != nil {
+		return "", err
+	}
+	return "File edited successfully", nil
 }
 
 type ToolFunctionParameters struct {

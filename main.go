@@ -6,10 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"maps"
 	"os"
 	"os/exec"
-	"slices"
 	"strings"
 
 	"github.com/moritz-tiesler/sous/tools"
@@ -30,8 +28,7 @@ func main() {
 		return scanner.Text(), true
 	}
 
-	tools := []ToolDefinition{}
-	agent := NewAgent(client, getUserMessage, tools)
+	agent := NewAgent(client, getUserMessage)
 	err = agent.Run(context.TODO())
 	if err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
@@ -41,7 +38,6 @@ func main() {
 func NewAgent(
 	client *api.Client,
 	getUserMessage func() (string, bool),
-	toosl []ToolDefinition,
 ) *Agent {
 	return &Agent{
 		client:         client,
@@ -120,6 +116,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		if len(toolResults) == 0 {
 			readUserInput = true
+			// fmt.Println(dumpConvo(conversation))
 			go func() {
 				if err = ping(); err != nil {
 					panic(err.Error())
@@ -131,7 +128,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		readUserInput = false
 		toolResMessage := fmt.Sprintf("%v", toolResults)
 		conversation = append(conversation, api.Message{Role: "tool", Content: toolResMessage})
-		fmt.Println(dumpConvo(conversation))
+		// fmt.Println(dumpConvo(conversation))
 
 	}
 	return nil
@@ -181,8 +178,17 @@ func (a *Agent) runInference(
 		Role:      "assistant",
 		ToolCalls: []api.ToolCall{},
 	}
+	thinkingOutput := false
 	respFunc := func(cr api.ChatResponse) error {
 		if stream {
+			if strings.TrimSpace(cr.Message.Content) == "<think>" {
+				fmt.Println("think detected")
+				thinkingOutput = true
+			}
+			if strings.TrimSpace(cr.Message.Content) == "</think>" {
+				fmt.Println("think end detected")
+				thinkingOutput = false
+			}
 			if !cr.Done {
 				fmt.Printf("%s", cr.Message.Content)
 			} else {
@@ -192,7 +198,9 @@ func (a *Agent) runInference(
 		if len(cr.Message.ToolCalls) > 0 {
 			message.ToolCalls = append(message.ToolCalls, cr.Message.ToolCalls...)
 		}
-		content.WriteString(cr.Message.Content)
+		if !thinkingOutput {
+			content.WriteString(cr.Message.Content)
+		}
 		return nil
 	}
 
@@ -228,53 +236,4 @@ func ping() error {
 	cmd := exec.Command("mpv", "/home/moritz/new-notification-09-352705.mp3")
 	err := cmd.Run()
 	return err
-}
-
-type ToolDefinition struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Schema      api.Tool `json:"schema"`
-	Function    func(api.ToolCallFunctionArguments) (string, error)
-	Params      map[string]string
-}
-
-func (tool ToolDefinition) Func() api.ToolFunction {
-	tf := api.ToolFunction{
-		Name:        tool.Name,
-		Description: tool.Description,
-		Parameters: struct {
-			Type       string   "json:\"type\""
-			Defs       any      "json:\"$defs,omitempty\""
-			Items      any      "json:\"items,omitempty\""
-			Required   []string "json:\"required\""
-			Properties map[string]struct {
-				Type        api.PropertyType `json:"type"`
-				Items       any              `json:"items,omitempty"`
-				Description string           `json:"description"`
-				Enum        []any            `json:"enum,omitempty"`
-			} `json:"properties"`
-		}{
-			Type:     "object",
-			Required: slices.Collect(maps.Keys(tool.Params)),
-			Properties: map[string]struct {
-				Type        api.PropertyType "json:\"type\""
-				Items       any              "json:\"items,omitempty\""
-				Description string           "json:\"description\""
-				Enum        []any            "json:\"enum,omitempty\""
-			}{},
-		},
-	}
-
-	for k, v := range tool.Params {
-		p := struct {
-			Type        api.PropertyType "json:\"type\""
-			Items       any              "json:\"items,omitempty\""
-			Description string           "json:\"description\""
-			Enum        []any            "json:\"enum,omitempty\""
-		}{}
-		p.Description = v
-		p.Type = []string{"string"}
-		tf.Parameters.Properties[k] = p
-	}
-	return tf
 }
