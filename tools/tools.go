@@ -136,7 +136,7 @@ func Tools() api.Tools {
 			Type: "function",
 			Function: api.ToolFunction{
 				Name:        WRITE_FILE,
-				Description: "write the contents to a file at a given path. Provides full control over file content.",
+				Description: "write the contents to a file at a given path. Provides full control over file content. Overwrite existing content. Use with caution.",
 				Parameters: ToolFunctionParameters{
 					Type:     "object",
 					Required: []string{"filePath", "content"},
@@ -147,7 +147,7 @@ func Tools() api.Tools {
 						},
 						"content": {
 							Type:        api.PropertyType{"string"},
-							Description: "The content to write to the file.",
+							Description: "The content to write to the file. All previous content in the file be truncated.",
 						},
 					},
 				}.ToAPI(),
