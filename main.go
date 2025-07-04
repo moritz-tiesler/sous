@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/moritz-tiesler/sous/tools"
 	"github.com/ollama/ollama/api"
 )
 
@@ -45,31 +46,16 @@ func NewAgent(
 	return &Agent{
 		client:         client,
 		getUserMessage: getUserMessage,
-		toolDefs: []ToolDefinition{
-			{
-				Name:        "readFile",
-				Description: "Read the contents of a given relative file path. Use this when you want to see what's inside a file. Do not use this with directory names.",
-				Function:    ReadFile,
-				Params: map[string]string{
-					"filePath": "The relative path of a file in the working directory.",
-				},
-			},
-			{
-				Name:        "shell",
-				Description: "use the shell to execute common linux commands for file manipulation and analysis",
-				Function:    Shell,
-				Params: map[string]string{
-					"command": "the shell command you want to execute",
-				},
-			},
-		},
+		toolDefs:       tools.Tools(),
+		toolMap:        tools.ToolMap(),
 	}
 }
 
 type Agent struct {
 	client         *api.Client
 	getUserMessage func() (string, bool)
-	toolDefs       []ToolDefinition
+	toolDefs       api.Tools
+	toolMap        map[string]func(api.ToolCallFunctionArguments) (string, error)
 }
 
 func ReadFile(args api.ToolCallFunctionArguments) (string, error) {
@@ -152,11 +138,11 @@ func (a *Agent) Run(ctx context.Context) error {
 }
 
 func (a *Agent) executeTool(idx int, name string, args api.ToolCallFunctionArguments) (string, error) {
-	var toolDef ToolDefinition
+	var toolFunc func(api.ToolCallFunctionArguments) (string, error)
 	var found bool
-	for _, tool := range a.toolDefs {
-		if tool.Name == name {
-			toolDef = tool
+	for n, f := range a.toolMap {
+		if n == name {
+			toolFunc = f
 			found = true
 			break
 		}
@@ -165,7 +151,7 @@ func (a *Agent) executeTool(idx int, name string, args api.ToolCallFunctionArgum
 		return fmt.Sprintf("tool '%s' not found", name), nil
 	}
 	fmt.Printf("\u001b[92mtool\u001b[0m: %s(%s)\n", name, args)
-	response, err := toolDef.Function(args)
+	response, err := toolFunc(args)
 	if err != nil {
 		fmt.Println(err.Error())
 		return err.Error(), err
@@ -178,14 +164,6 @@ func (a *Agent) runInference(
 	conversation []api.Message,
 	stream bool,
 ) (api.Message, error) {
-	reqTools := api.Tools{}
-	for _, td := range a.toolDefs {
-		t := api.Tool{
-			Type:     "function",
-			Function: td.Func(),
-		}
-		reqTools = append(reqTools, t)
-	}
 
 	req := &api.ChatRequest{
 		// Model:  "gemma2",
@@ -196,7 +174,7 @@ func (a *Agent) runInference(
 		Model:    "qwen3:14b",
 		Messages: conversation,
 		Stream:   &stream,
-		Tools:    reqTools,
+		Tools:    a.toolDefs,
 	}
 	content := strings.Builder{}
 	message := api.Message{
