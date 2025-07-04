@@ -292,9 +292,7 @@ func (a *Agent) runInference(
 		if len(cr.Message.ToolCalls) > 0 {
 			message.ToolCalls = append(message.ToolCalls, cr.Message.ToolCalls...)
 		}
-		if !thinkingOutput {
-			content.WriteString(cr.Message.Content)
-		}
+		content.WriteString(cr.Message.Content)
 		if strings.TrimSpace(cr.Message.Content) == "</think>" {
 			thinkingOutput = false
 		}
