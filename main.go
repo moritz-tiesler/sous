@@ -181,7 +181,6 @@ func (a *Agent) summarizeConvo(ctx context.Context, conversation []api.Message) 
 		Content: "please summarize the active conversation, so that you can pick up your work form here. include the original user instructions so that you do not loose the context of the task at hand. include previous tool calls in this summary.",
 	})
 	stream := true
-	think := false
 	req := &api.ChatRequest{
 		// Model:  "gemma2",
 		// Model:    "devstral:24b-small-2505-q8_0",
@@ -193,7 +192,6 @@ func (a *Agent) summarizeConvo(ctx context.Context, conversation []api.Message) 
 		Messages: conversation,
 		Stream:   &stream,
 		Tools:    a.toolDefs,
-		Think:    &think,
 	}
 	content := strings.Builder{}
 	message := api.Message{
