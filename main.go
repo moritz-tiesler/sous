@@ -110,7 +110,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	stream := true
 	readUserInput := true
 	for {
-		if len(conversation) > 10 {
+		if len(conversation) > 6 {
 			PrintAction("%s...\n", "SUMMARIZING")
 			summary, err := a.summarizeConvo(ctx, conversation)
 			if err != nil {
@@ -177,7 +177,7 @@ func (a *Agent) summarizeConvo(ctx context.Context, conversation []api.Message) 
 	a.SetActiveChatContext(reqCtx, reqCancel)
 	conversation = append(conversation, api.Message{
 		Role:    "user",
-		Content: "please summarize the active conversation, so that you can pick up your work form here",
+		Content: "please summarize the active conversation, so that you can pick up your work form here. include the original user instructions so that you do not loose the context of the task at hand",
 	})
 	stream := true
 	think := false
@@ -196,7 +196,7 @@ func (a *Agent) summarizeConvo(ctx context.Context, conversation []api.Message) 
 	}
 	content := strings.Builder{}
 	message := api.Message{
-		Role: "assistant",
+		Role: "user",
 	}
 	respFunc := func(cr api.ChatResponse) error {
 		select {
