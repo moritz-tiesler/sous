@@ -61,7 +61,11 @@ func ListFiles(args api.ToolCallFunctionArguments) (string, error) {
 	}
 	var result []string
 	for _, file := range files {
-		result = append(result, file.Name())
+		fName := file.Name()
+		if file.IsDir() {
+			fName += "/"
+		}
+		result = append(result, fName)
 	}
 	return strings.Join(result, "\n"), nil
 }
