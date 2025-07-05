@@ -59,6 +59,7 @@ func main() {
 		err = agent.Run(appCtx)
 		if err != nil {
 			fmt.Printf("Error: %s\n", err.Error())
+			appCancel()
 		}
 	}()
 
@@ -110,11 +111,11 @@ func (a *Agent) Run(ctx context.Context) error {
 	stream := true
 	readUserInput := true
 	for {
-		if len(conversation) > 6 {
+		if len(conversation) > 10 {
 			PrintAction("%s...\n", "SUMMARIZING")
 			summary, err := a.summarizeConvo(ctx, conversation)
 			if err != nil {
-				return nil
+				return err
 			}
 
 			conversation = append([]api.Message{}, summary)
@@ -177,7 +178,7 @@ func (a *Agent) summarizeConvo(ctx context.Context, conversation []api.Message) 
 	a.SetActiveChatContext(reqCtx, reqCancel)
 	conversation = append(conversation, api.Message{
 		Role:    "user",
-		Content: "please summarize the active conversation, so that you can pick up your work form here. include the original user instructions so that you do not loose the context of the task at hand",
+		Content: "please summarize the active conversation, so that you can pick up your work form here. include the original user instructions so that you do not loose the context of the task at hand. include previous tool calls in this summary.",
 	})
 	stream := true
 	think := false
