@@ -233,8 +233,8 @@ func (a *Agent) executeTool(idx int, name string, args api.ToolCallFunctionArgum
 	if !found {
 		return fmt.Sprintf("tool '%s' not found", name), nil
 	}
-	PrintAction("tool: %s, %v\n", name, args)
 	response, err := toolFunc(args)
+	PrintAction("tool: %s, %v\n%v\n", name, args, response)
 	if err != nil {
 		PrintAction("errors %s %v\n", response, err.Error())
 		return response, err
