@@ -36,6 +36,8 @@ type ToolFunctionProperty struct {
 	Description string `json:"description"`
 }
 
+// TODO introduce path tool, model can create patch files for localized edits
+
 // ReadFile reads the content of a file at the given path.
 func ReadFile(args map[string]interface{}) (string, error) {
 	path := args["filePath"].(string)
@@ -140,7 +142,7 @@ func Tools() []Tool {
 			Function: Function{
 				Name:        "readFile",
 				Description: "Read the contents of a given relative file path.",
-				Parameters:  ToolFunctionParameters{
+				Parameters: ToolFunctionParameters{
 					Type:     "object",
 					Required: []string{"filePath"},
 					Properties: ToolFunctionProperties{
@@ -154,7 +156,7 @@ func Tools() []Tool {
 			Function: Function{
 				Name:        "shell",
 				Description: "Execute a shell command.",
-				Parameters:  ToolFunctionParameters{
+				Parameters: ToolFunctionParameters{
 					Type:     "object",
 					Required: []string{"command"},
 					Properties: ToolFunctionProperties{
@@ -168,7 +170,7 @@ func Tools() []Tool {
 			Function: Function{
 				Name:        "writeFile",
 				Description: "Write content to a file.",
-				Parameters:  ToolFunctionParameters{
+				Parameters: ToolFunctionParameters{
 					Type:     "object",
 					Required: []string{"filePath", "content"},
 					Properties: ToolFunctionProperties{
@@ -183,7 +185,7 @@ func Tools() []Tool {
 			Function: Function{
 				Name:        "searchFile",
 				Description: "Search for a string in a file.",
-				Parameters:  ToolFunctionParameters{
+				Parameters: ToolFunctionParameters{
 					Type:     "object",
 					Required: []string{"filePath", "query"},
 					Properties: ToolFunctionProperties{
@@ -198,7 +200,7 @@ func Tools() []Tool {
 			Function: Function{
 				Name:        "listFiles",
 				Description: "List files in a directory.",
-				Parameters:  ToolFunctionParameters{
+				Parameters: ToolFunctionParameters{
 					Type:     "object",
 					Required: []string{"dirPath"},
 					Properties: ToolFunctionProperties{
@@ -212,7 +214,7 @@ func Tools() []Tool {
 			Function: Function{
 				Name:        "createFile",
 				Description: "Create a new file with given content.",
-				Parameters:  ToolFunctionParameters{
+				Parameters: ToolFunctionParameters{
 					Type:     "object",
 					Required: []string{"filePath", "content"},
 					Properties: ToolFunctionProperties{
