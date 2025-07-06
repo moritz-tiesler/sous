@@ -10,11 +10,11 @@ import (
 	"syscall"
 
 	"github.com/moritz-tiesler/sous/agent"
-	"github.com/ollama/ollama/api"
+	"github.com/moritz-tiesler/sous/llm"
 )
 
 func main() {
-	client, err := api.ClientFromEnvironment()
+	client, err := llm.NewOllamaClient()
 	if err != nil {
 		log.Fatal(err)
 	}

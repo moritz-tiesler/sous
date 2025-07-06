@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/moritz-tiesler/sous/llm"
 	"github.com/moritz-tiesler/sous/output"
 	"github.com/moritz-tiesler/sous/tools"
 	"github.com/ollama/ollama/api"
@@ -19,7 +20,7 @@ type ChatContext struct {
 }
 
 type Agent struct {
-	client         *api.Client
+	client         llm.ChatClient
 	getUserMessage func() (string, bool)
 	toolDefs       api.Tools
 	toolMap        map[string]func(api.ToolCallFunctionArguments) (string, error)
@@ -29,7 +30,7 @@ type Agent struct {
 }
 
 func NewAgent(
-	client *api.Client,
+	client llm.ChatClient,
 	getUserMessage func() (string, bool),
 ) *Agent {
 	return &Agent{
