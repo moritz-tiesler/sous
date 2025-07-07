@@ -5,23 +5,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 
-	"github.com/moritz-tiesler/sous/tools"
+	"github.com/moritz-tiesler/sous/client"
+	toolsopenai "github.com/moritz-tiesler/sous/tools_openai"
 	"github.com/ollama/ollama/api"
+	"github.com/openai/openai-go"
 )
 
 func main() {
-	client, err := api.ClientFromEnvironment()
-	if err != nil {
-		log.Fatal(err)
-	}
+	// client, err := api.ClientFromEnvironment()
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	client := client.New("Qwen3-14B-128K-GGUF_Qwen3-14B-128K-UD-Q6_K_XL")
 
 	scanner := bufio.NewScanner(os.Stdin)
 	getUserMessage := func() (string, bool) {
@@ -41,10 +43,10 @@ func main() {
 		for {
 			select {
 			case <-sigCh:
-				if agent.chatContext.cancel != nil {
-					agent.chatContext.cancel()
+				if agent.client.ChatContext.Cancel != nil {
+					agent.client.ChatContext.Cancel()
 					fmt.Println()
-					agent.SetActiveChatContext(context.TODO(), nil)
+					agent.client.ClearChatContext()
 				} else {
 					appCancel()
 				}
@@ -56,7 +58,7 @@ func main() {
 	}()
 
 	go func() {
-		err = agent.Run(appCtx)
+		err := agent.Run(appCtx)
 		if err != nil {
 			fmt.Printf("Error: %s\n", err.Error())
 			appCancel()
@@ -69,15 +71,14 @@ func main() {
 }
 
 func NewAgent(
-	client *api.Client,
+	client *client.Client,
 	getUserMessage func() (string, bool),
 ) *Agent {
 	return &Agent{
-		client:         client,
-		getUserMessage: getUserMessage,
-		toolDefs:       tools.Tools(),
-		toolMap:        tools.ToolMap(),
-		chatContext:    &ChatContext{context.Background(), nil},
+		client:       client,
+		getUserInput: getUserMessage,
+		toolDefs:     toolsopenai.Tools(),
+		toolMap:      toolsopenai.ToolMap(),
 	}
 }
 
@@ -87,77 +88,79 @@ type ChatContext struct {
 }
 
 type Agent struct {
-	client         *api.Client
-	getUserMessage func() (string, bool)
-	toolDefs       api.Tools
-	toolMap        map[string]func(api.ToolCallFunctionArguments) (string, error)
-
-	mu          sync.Mutex
-	chatContext *ChatContext
-}
-
-func (a *Agent) SetActiveChatContext(ctx context.Context, cancel context.CancelFunc) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.chatContext = &ChatContext{ctx: ctx, cancel: cancel}
+	client       *client.Client
+	getUserInput func() (string, bool)
+	toolDefs     []openai.ChatCompletionToolParam
+	toolMap      map[string]func(string) (string, error)
 }
 
 const PREFIX = "\u001b[93mSous\u001b[0m: %s"
 
+func dumpConvo(convo []openai.ChatCompletionMessageParamUnion) string {
+	sb := strings.Builder{}
+	for _, m := range convo {
+		b, err := json.MarshalIndent(m, "", "    ")
+		if err != nil {
+			panic(fmt.Sprintf("error unmarshaling %v", m))
+		}
+		sb.Write(b)
+	}
+	return sb.String()
+}
+
 func (a *Agent) Run(ctx context.Context) error {
-	conversation := []api.Message{}
+	conversation := []openai.ChatCompletionMessageParamUnion{}
 	fmt.Println("Chat with Sous")
 
-	stream := true
+	// stream := true
 	readUserInput := true
 	for {
-		if len(conversation) > 10 {
+		if len(conversation) > 4 {
 			PrintAction("%s...\n", "SUMMARIZING")
 			summary, err := a.summarizeConvo(ctx, conversation)
-			if err != nil {
-				return err
-			}
 
-			conversation = append([]api.Message{}, summary)
-			PrintAction("NEW CONVO LEN=%d...\n", len(conversation))
-			PrintAction("NEW CONVO STarts with=%s...\n", summary.Content)
+			if err != nil {
+				fmt.Println("error after summarizeConvo")
+				fmt.Println(dumpConvo(conversation))
+				fmt.Println(err.Error())
+			} else {
+				conversation = append([]openai.ChatCompletionMessageParamUnion{}, summary.ToParam())
+				PrintAction("NEW CONVO LEN=%d...\n", len(conversation))
+				PrintAction("NEW CONVO STarts with=%s...\n", summary.Content)
+			}
 		}
 		if readUserInput {
 			fmt.Print("\u001b[94mYou\u001b[0m: ")
-			userInput, ok := a.getUserMessage()
+			userInput, ok := a.getUserInput()
 			if !ok {
 				break
 			}
-
-			userMessage := api.Message{
-				Role:    "user",
-				Content: userInput,
-			}
+			userMessage := openai.UserMessage(userInput)
 			conversation = append(conversation, userMessage)
 		}
 
-		message, err := a.runInference(ctx, conversation, stream)
+		message, err := a.client.RunInference(ctx, conversation)
 		if err != nil {
+			fmt.Println("error after RunInference")
+			fmt.Println(len(conversation))
 			fmt.Println(dumpConvo(conversation))
-			return err
+			fmt.Println(err.Error())
 		}
-		conversation = append(conversation, message)
+		conversation = append(conversation, message.ToParam())
 
-		toolResults := map[string]string{}
+		toolResults := []openai.ChatCompletionMessageParamUnion{}
+
+		fmt.Printf(PREFIX, "")
+		PrintNonThink("%s\n", message.Content)
 		for _, toolCall := range message.ToolCalls {
 			f := toolCall.Function
-			result, err := a.executeTool(f.Index, f.Name, f.Arguments)
-			var res string
-			res += result
-			if err != nil {
-				res += fmt.Sprintf("error: %s\n", err.Error())
-			}
-			toolResults[f.Name] = res
+			result, _ := a.executeTool(toolCall.ID, f.Name, f.Arguments)
+			toolResults = append(toolResults, result)
 		}
 		if len(toolResults) == 0 {
 			readUserInput = true
 			go func() {
-				if err = ping(); err != nil {
+				if err := ping(); err != nil {
 					panic(err.Error())
 				}
 			}()
@@ -165,62 +168,32 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 
 		readUserInput = false
-		toolResMessage := fmt.Sprintf("%v", toolResults)
-		conversation = append(conversation, api.Message{Role: "tool", Content: toolResMessage})
+		conversation = append(conversation, toolResults...)
+
+		if len(conversation) < 1 {
+			panic("why conve len=0?????")
+		}
 
 	}
 	return nil
 }
 
-func (a *Agent) summarizeConvo(ctx context.Context, conversation []api.Message) (api.Message, error) {
+func (a *Agent) summarizeConvo(
+	ctx context.Context,
+	conversation []openai.ChatCompletionMessageParamUnion,
+) (openai.ChatCompletionMessage, error) {
 
-	reqCtx, reqCancel := context.WithCancel(ctx)
-	a.SetActiveChatContext(reqCtx, reqCancel)
-	conversation = append(conversation, api.Message{
-		Role:    "user",
-		Content: "please summarize the active conversation, so that you can pick up your work form here. include the original user instructions so that you do not loose the context of the task at hand. include previous tool calls in this summary.",
-	})
-	stream := true
-	req := &api.ChatRequest{
-		// Model:  "gemma2",
-		// Model:    "devstral:24b-small-2505-q8_0",
-		// Model:    "llama3.2:latest",
-		// Model:    "qwen2.5-coder:32b",
-		// Model:    "qwen3:32b",
-		// Model:    "qwen3:14b",
-		Model:    "qwen3:14b_devstral",
-		Messages: conversation,
-		Stream:   &stream,
-		Tools:    a.toolDefs,
-	}
-	content := strings.Builder{}
-	message := api.Message{
-		Role: "user",
-	}
-	respFunc := func(cr api.ChatResponse) error {
-		select {
-		case <-reqCtx.Done():
-			return fmt.Errorf("chat cancelled")
-		default:
-		}
+	userMessage := openai.UserMessage(
+		"please summarize the active conversation, so that you can pick up your work form here. include the original user instructions so that you do not loose the context of the task at hand. include previous tool calls in this summary.",
+	)
+	conversation = append(conversation, userMessage)
 
-		if !cr.Done {
-			PrintAction("%s", cr.Message.Content)
-		} else {
-			fmt.Println()
-		}
-		content.WriteString(cr.Message.Content)
-		return nil
-	}
-
-	err := a.client.Chat(reqCtx, req, respFunc)
-	message.Content = content.String()
-	a.SetActiveChatContext(context.TODO(), nil)
-	return message, err
+	summary, err := a.client.RunInference(ctx, conversation)
+	return summary, err
 }
 
-func (a *Agent) executeTool(idx int, name string, args api.ToolCallFunctionArguments) (string, error) {
-	var toolFunc func(api.ToolCallFunctionArguments) (string, error)
+func (a *Agent) executeTool(id string, name string, args string) (openai.ChatCompletionMessageParamUnion, error) {
+	var toolFunc func(string) (string, error)
 	var found bool
 	for n, f := range a.toolMap {
 		if n == name {
@@ -230,79 +203,80 @@ func (a *Agent) executeTool(idx int, name string, args api.ToolCallFunctionArgum
 		}
 	}
 	if !found {
-		return fmt.Sprintf("tool '%s' not found", name), nil
+		return openai.ToolMessage("tool '%s' not found", id), nil
 	}
 	response, err := toolFunc(args)
 	PrintAction("tool: %s, %v\n%v\n", name, args, response)
 	if err != nil {
 		PrintAction("errors %s %v\n", response, err.Error())
-		return response, err
+		return openai.ToolMessage(err.Error(), id), nil
 	}
-	return response, nil
+	return openai.ToolMessage(response, id), nil
 }
 
 func (a *Agent) runInference(
 	ctx context.Context,
-	conversation []api.Message,
-	stream bool,
-) (api.Message, error) {
+	conversation []openai.ChatCompletionMessageParamUnion,
+	// stream bool,
+) (openai.ChatCompletionMessage, error) {
 
 	reqCtx, reqCancel := context.WithCancel(ctx)
-	a.SetActiveChatContext(reqCtx, reqCancel)
-	req := &api.ChatRequest{
-		// Model:  "gemma2",
-		// Model:    "devstral:24b-small-2505-q8_0",
-		// Model:    "llama3.2:latest",
-		// Model:    "qwen2.5-coder:32b",
-		// Model:    "qwen3:32b",
-		// Model:    "qwen3:14b",
-		Model:    "qwen3:14b_devstral",
-		Messages: conversation,
-		Stream:   &stream,
-		Tools:    a.toolDefs,
-	}
-	content := strings.Builder{}
-	message := api.Message{
-		Role:      "assistant",
-		ToolCalls: []api.ToolCall{},
-	}
-	thinkingOutput := false
-	respFunc := func(cr api.ChatResponse) error {
-		select {
-		case <-reqCtx.Done():
-			return fmt.Errorf("chat cancelled")
-		default:
-		}
+	a.client.SetActiveChatContext(reqCtx, reqCancel)
+	// req := &api.ChatRequest{
+	// 	// Model:  "gemma2",
+	// 	// Model:    "devstral:24b-small-2505-q8_0",
+	// 	// Model:    "llama3.2:latest",
+	// 	// Model:    "qwen2.5-coder:32b",
+	// 	// Model:    "qwen3:32b",
+	// 	// Model:    "qwen3:14b",
+	// 	Model:    "qwen3:14b_devstral",
+	// 	Messages: conversation,
+	// 	Stream:   &stream,
+	// 	Tools:    a.toolDefs,
+	// }
+	// content := strings.Builder{}
+	// message := api.Message{
+	// 	Role:      "assistant",
+	// 	ToolCalls: []api.ToolCall{},
+	// }
+	// thinkingOutput := false
+	// respFunc := func(cr api.ChatResponse) error {
+	// 	select {
+	// 	case <-reqCtx.Done():
+	// 		return fmt.Errorf("chat cancelled")
+	// 	default:
+	// 	}
 
-		if strings.TrimSpace(cr.Message.Content) == "<think>" {
-			thinkingOutput = true
-		}
-		var printFunc func(format string, a ...interface{})
-		if thinkingOutput {
-			printFunc = PrintThink
-		} else {
-			printFunc = PrintNonThink
-		}
-		if !cr.Done {
-			printFunc("%s", cr.Message.Content)
-		} else {
-			fmt.Println()
-		}
-		if len(cr.Message.ToolCalls) > 0 {
-			message.ToolCalls = append(message.ToolCalls, cr.Message.ToolCalls...)
-		}
-		content.WriteString(cr.Message.Content)
-		if strings.TrimSpace(cr.Message.Content) == "</think>" {
-			thinkingOutput = false
-		}
-		return nil
-	}
+	// 	if strings.TrimSpace(cr.Message.Content) == "<think>" {
+	// 		thinkingOutput = true
+	// 	}
+	// 	var printFunc func(format string, a ...interface{})
+	// 	if thinkingOutput {
+	// 		printFunc = PrintThink
+	// 	} else {
+	// 		printFunc = PrintNonThink
+	// 	}
+	// 	if !cr.Done {
+	// 		printFunc("%s", cr.Message.Content)
+	// 	} else {
+	// 		fmt.Println()
+	// 	}
+	// 	if len(cr.Message.ToolCalls) > 0 {
+	// 		message.ToolCalls = append(message.ToolCalls, cr.Message.ToolCalls...)
+	// 	}
+	// 	content.WriteString(cr.Message.Content)
+	// 	if strings.TrimSpace(cr.Message.Content) == "</think>" {
+	// 		thinkingOutput = false
+	// 	}
+	// 	return nil
+	// }
 
-	fmt.Printf(PREFIX, "")
-	err := a.client.Chat(reqCtx, req, respFunc)
-	message.Content = content.String()
-	a.SetActiveChatContext(context.TODO(), nil)
-	return message, err
+	// fmt.Printf(PREFIX, "")
+	// err := a.client.Chat(reqCtx, req, respFunc)
+	// message.Content = content.String()
+	message, _ := a.client.RunInference(ctx, conversation)
+	a.client.ClearChatContext()
+	return message, nil //, err
 }
 
 func dumpRequest(r api.ChatRequest) string {
@@ -312,18 +286,6 @@ func dumpRequest(r api.ChatRequest) string {
 		panic(fmt.Sprintf("error unmarshaling %v", r))
 	}
 	sb.Write(b)
-	return sb.String()
-}
-
-func dumpConvo(convo []api.Message) string {
-	sb := strings.Builder{}
-	for _, m := range convo {
-		b, err := json.MarshalIndent(m, "", "    ")
-		if err != nil {
-			panic(fmt.Sprintf("error unmarshaling %v", m))
-		}
-		sb.Write(b)
-	}
 	return sb.String()
 }
 

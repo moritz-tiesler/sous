@@ -1,13 +1,71 @@
 package client
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+
+	toolsopenai "github.com/moritz-tiesler/sous/tools_openai"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 )
 
-func NewOpenAiClient() *openai.Client {
-	client := openai.NewClient(
-		option.WithBaseURL("http://172.26.208.1:1234/v1"),
+type ChatContext struct {
+	ctx    context.Context
+	Cancel context.CancelFunc
+}
+
+type Client struct {
+	c           *openai.Client
+	modelName   string
+	tools       []openai.ChatCompletionToolParam
+	mu          sync.Mutex
+	ChatContext *ChatContext
+}
+
+func (c *Client) SetActiveChatContext(ctx context.Context, cancel context.CancelFunc) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ChatContext = &ChatContext{ctx: ctx, Cancel: cancel}
+}
+
+func (c *Client) ClearChatContext() {
+	c.SetActiveChatContext(context.TODO(), nil)
+}
+
+// todo inherit context, ie pass the context to New
+func New(modelName string) *Client {
+	c := openai.NewClient(
+		option.WithBaseURL("http://172.26.208.1:1234/v1/"),
 	)
-	return &client
+	return &Client{
+		c:           &c,
+		modelName:   modelName,
+		tools:       toolsopenai.Tools(),
+		ChatContext: &ChatContext{},
+	}
+}
+
+func (c *Client) RunInference(
+	ctx context.Context,
+	conversation []openai.ChatCompletionMessageParamUnion,
+) (openai.ChatCompletionMessage, error) {
+	reqCtx, reqCancel := context.WithCancel(ctx)
+	c.SetActiveChatContext(reqCtx, reqCancel)
+	chatCompletion, err := c.c.Chat.Completions.New(reqCtx, openai.ChatCompletionNewParams{
+		Messages: conversation,
+		Model:    c.modelName,
+		Tools:    c.tools,
+	})
+
+	var message openai.ChatCompletionMessage
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return message, fmt.Errorf("inference cancelled: %v", err)
+		}
+		return message, err
+	}
+	c.ClearChatContext()
+	return chatCompletion.Choices[0].Message, nil
 }
