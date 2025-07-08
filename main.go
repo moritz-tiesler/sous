@@ -34,8 +34,11 @@ func main() {
 		return scanner.Text(), true
 	}
 
-	agent := NewAgent(client, getUserMessage)
-
+	agent := NewAgent(
+		client, getUserMessage,
+		toolsopenai.Tools(),
+		toolsopenai.ToolMap(),
+	)
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
@@ -74,12 +77,14 @@ func main() {
 func NewAgent(
 	client *client.Client,
 	getUserMessage func() (string, bool),
+	toolDefs []openai.ChatCompletionToolParam,
+	toolMap map[string]func(string) (string, error),
 ) *Agent {
 	return &Agent{
 		client:       client,
 		getUserInput: getUserMessage,
-		toolDefs:     toolsopenai.Tools(),
-		toolMap:      toolsopenai.ToolMap(),
+		toolDefs:     toolDefs,
+		toolMap:      toolMap,
 	}
 }
 
@@ -140,7 +145,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			conversation = append(conversation, userMessage)
 		}
 
-		message, err := a.client.RunInference(ctx, conversation)
+		message, err := a.client.RunInference(ctx, conversation, a.toolDefs)
 		if err != nil {
 			fmt.Println("error after RunInference")
 			fmt.Println(len(conversation))
@@ -195,7 +200,7 @@ func (a *Agent) summarizeConvo(
 	)
 	conversation = append(conversation, userMessage)
 
-	summary, err := a.client.RunInference(ctx, conversation)
+	summary, err := a.client.RunInference(ctx, conversation, a.toolDefs)
 	return summary, err
 }
 
@@ -281,7 +286,7 @@ func (a *Agent) runInference(
 	// fmt.Printf(PREFIX, "")
 	// err := a.client.Chat(reqCtx, req, respFunc)
 	// message.Content = content.String()
-	message, _ := a.client.RunInference(ctx, conversation)
+	message, _ := a.client.RunInference(ctx, conversation, a.toolDefs)
 	a.client.ClearChatContext()
 	return message, nil //, err
 }

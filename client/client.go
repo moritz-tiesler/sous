@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 
-	toolsopenai "github.com/moritz-tiesler/sous/tools_openai"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 )
@@ -19,7 +18,6 @@ type ChatContext struct {
 type Client struct {
 	c           *openai.Client
 	modelName   string
-	tools       []openai.ChatCompletionToolParam
 	mu          sync.Mutex
 	ChatContext *ChatContext
 }
@@ -42,7 +40,6 @@ func New(modelName string) *Client {
 	return &Client{
 		c:           &c,
 		modelName:   modelName,
-		tools:       toolsopenai.Tools(),
 		ChatContext: &ChatContext{},
 	}
 }
@@ -50,13 +47,14 @@ func New(modelName string) *Client {
 func (c *Client) RunInference(
 	ctx context.Context,
 	conversation []openai.ChatCompletionMessageParamUnion,
+	tools []openai.ChatCompletionToolParam,
 ) (openai.ChatCompletionMessage, error) {
 	reqCtx, reqCancel := context.WithCancel(ctx)
 	c.SetActiveChatContext(reqCtx, reqCancel)
 	chatCompletion, err := c.c.Chat.Completions.New(reqCtx, openai.ChatCompletionNewParams{
 		Messages: conversation,
 		Model:    c.modelName,
-		Tools:    c.tools,
+		Tools:    tools,
 	})
 
 	var message openai.ChatCompletionMessage
