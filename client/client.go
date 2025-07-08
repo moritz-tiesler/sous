@@ -69,3 +69,28 @@ func (c *Client) RunInference(
 	c.ClearChatContext()
 	return chatCompletion.Choices[0].Message, nil
 }
+
+func (c *Client) RunInferenceSingle(
+	ctx context.Context,
+	prompt string,
+) (string, error) {
+	reqCtx, reqCancel := context.WithCancel(ctx)
+	c.SetActiveChatContext(reqCtx, reqCancel)
+	completion, err := c.c.Completions.New(reqCtx, openai.CompletionNewParams{
+		Prompt: openai.CompletionNewParamsPromptUnion{
+			OfString: openai.String(prompt),
+		},
+
+		Model: openai.CompletionNewParamsModel(c.modelName),
+	})
+
+	var message string
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return message, fmt.Errorf("inference cancelled: %v", err)
+		}
+		return message, err
+	}
+	c.ClearChatContext()
+	return completion.Choices[0].Text, nil
+}
