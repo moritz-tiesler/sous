@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/moritz-tiesler/sous/client"
 	toolsopenai "github.com/moritz-tiesler/sous/tools_openai"
 	"github.com/ollama/ollama/api"
@@ -151,7 +152,13 @@ func (a *Agent) Run(ctx context.Context) error {
 		toolResults := []openai.ChatCompletionMessageParamUnion{}
 
 		fmt.Printf(PREFIX, "")
-		PrintNonThink("%s\n", message.Content)
+		// TODO print code md snippets as md
+		// PrintNonThink("%s\n", message.Content)
+		out, err := glamour.Render(message.Content, "dracula")
+		if err != nil {
+			panic(err)
+		}
+		fmt.Print(out)
 		for _, toolCall := range message.ToolCalls {
 			f := toolCall.Function
 			result, _ := a.executeTool(toolCall.ID, f.Name, f.Arguments)
